@@ -72,33 +72,46 @@ fun ChatScreen(viewModel: ChatViewModel) {
     }
 
     // Use WindowInsets to handle keyboard properly
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colorScheme.background) // Extend background to fill entire screen including status bar
-    ) {
-        val headerHeight = 42.dp
-        
-        // Main content area that responds to keyboard/window insets
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.ime) // This handles keyboard insets
-                .windowInsetsPadding(WindowInsets.navigationBars) // Add bottom padding when keyboard is not expanded
-        ) {
-            // Header spacer - creates exact space for the floating header (status bar + compact header)
-            Spacer(
-                modifier = Modifier
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .height(headerHeight)
+    Scaffold(
+        containerColor = colorScheme.background,
+        topBar = {
+            ChatFloatingHeader(
+                selectedPrivatePeer = selectedPrivatePeer,
+                currentChannel = currentChannel,
+                nickname = nickname,
+                viewModel = viewModel,
+                colorScheme = colorScheme,
+                onSidebarToggle = { viewModel.showSidebar() },
+                onShowAppInfo = { viewModel.showAppInfo() },
+                onPanicClear = { viewModel.panicClearAllData() },
+                onLocationChannelsClick = { showLocationChannelsSheet = true }
             )
 
+            AnimatedVisibility(
+                visible = showSidebar,
+                enter = slideInHorizontally(
+                    initialOffsetX = { it },
+                    animationSpec = tween(300, easing = EaseOutCubic)
+                ) + fadeIn(animationSpec = tween(300)),
+                exit = slideOutHorizontally(
+                    targetOffsetX = { it },
+                    animationSpec = tween(250, easing = EaseInCubic)
+                ) + fadeOut(animationSpec = tween(250)),
+                modifier = Modifier.zIndex(2f)
+            ) {
+                SidebarOverlay(
+                    viewModel = viewModel,
+                    onDismiss = { viewModel.hideSidebar() },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        },
+        content = { innerPadding ->
             // Messages area - takes up available space, will compress when keyboard appears
             MessagesList(
                 messages = displayMessages,
                 currentUserNickname = nickname,
                 meshService = viewModel.meshService,
-                modifier = Modifier.weight(1f),
                 forceScrollToBottom = forceScrollToBottom,
                 onNicknameClick = { fullSenderName ->
                     // Single click - mention user in text input
@@ -116,13 +129,13 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         // Regular chat - just the base nickname
                         "@$baseName"
                     }
-                    
+
                     val newText = when {
                         currentText.isEmpty() -> "$mentionText "
                         currentText.endsWith(" ") -> "$currentText$mentionText "
                         else -> "$currentText $mentionText "
                     }
-                    
+
                     messageText = TextFieldValue(
                         text = newText,
                         selection = TextRange(newText.length)
@@ -135,8 +148,46 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     selectedUserForSheet = baseName
                     selectedMessageForSheet = message
                     showUserSheet = true
-                }
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(colorScheme.background)
+                    .padding(innerPadding),
             )
+            // Dialogs
+            ChatDialogs(
+                showPasswordDialog = showPasswordDialog,
+                passwordPromptChannel = passwordPromptChannel,
+                passwordInput = passwordInput,
+                onPasswordChange = { passwordInput = it },
+                onPasswordConfirm = {
+                    if (passwordInput.isNotEmpty()) {
+                        val success = viewModel.joinChannel(passwordPromptChannel!!, passwordInput)
+                        if (success) {
+                            showPasswordDialog = false
+                            passwordInput = ""
+                        }
+                    }
+                },
+                onPasswordDismiss = {
+                    showPasswordDialog = false
+                    passwordInput = ""
+                },
+            )
+
+            ChatSheets(
+                showAppInfo = showAppInfo,
+                onAppInfoDismiss = { viewModel.hideAppInfo() },
+                showLocationChannelsSheet = showLocationChannelsSheet,
+                onLocationChannelsSheetDismiss = { showLocationChannelsSheet = false },
+                showUserSheet = showUserSheet,
+                onUserSheetDismiss = { showUserSheet = false },
+                selectedUserForSheet = selectedUserForSheet,
+                selectedMessageForSheet = selectedMessageForSheet,
+                viewModel = viewModel
+            )
+        },
+        bottomBar = {
             // Input area - stays at bottom
             ChatInputSection(
                 messageText = messageText,
@@ -176,101 +227,6 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 colorScheme = colorScheme
             )
         }
-
-        // Floating header - positioned absolutely at top, ignores keyboard
-        ChatFloatingHeader(
-            headerHeight = headerHeight,
-            selectedPrivatePeer = selectedPrivatePeer,
-            currentChannel = currentChannel,
-            nickname = nickname,
-            viewModel = viewModel,
-            colorScheme = colorScheme,
-            onSidebarToggle = { viewModel.showSidebar() },
-            onShowAppInfo = { viewModel.showAppInfo() },
-            onPanicClear = { viewModel.panicClearAllData() },
-            onLocationChannelsClick = { showLocationChannelsSheet = true }
-        )
-
-        // Divider under header - positioned after status bar + header height
-        HorizontalDivider(
-            modifier = Modifier
-                .fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .offset(y = headerHeight)
-                .zIndex(1f),
-            color = colorScheme.outline.copy(alpha = 0.3f)
-        )
-
-        val alpha by animateFloatAsState(
-            targetValue = if (showSidebar) 0.5f else 0f,
-            animationSpec = tween(
-                durationMillis = 300,
-                easing = EaseOutCubic
-            ), label = "overlayAlpha"
-        )
-
-        // Only render the background if it's visible
-        if (alpha > 0f) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = alpha))
-                    .clickable { viewModel.hideSidebar() }
-                    .zIndex(1f)
-            )
-        }
-
-        AnimatedVisibility(
-            visible = showSidebar,
-            enter = slideInHorizontally(
-                initialOffsetX = { it },
-                animationSpec = tween(300, easing = EaseOutCubic)
-            ) + fadeIn(animationSpec = tween(300)),
-            exit = slideOutHorizontally(
-                targetOffsetX = { it },
-                animationSpec = tween(250, easing = EaseInCubic)
-            ) + fadeOut(animationSpec = tween(250)),
-            modifier = Modifier.zIndex(2f)
-        ) {
-            SidebarOverlay(
-                viewModel = viewModel,
-                onDismiss = { viewModel.hideSidebar() },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-    }
-
-    // Dialogs and Sheets
-    ChatDialogs(
-        showPasswordDialog = showPasswordDialog,
-        passwordPromptChannel = passwordPromptChannel,
-        passwordInput = passwordInput,
-        onPasswordChange = { passwordInput = it },
-        onPasswordConfirm = {
-            if (passwordInput.isNotEmpty()) {
-                val success = viewModel.joinChannel(passwordPromptChannel!!, passwordInput)
-                if (success) {
-                    showPasswordDialog = false
-                    passwordInput = ""
-                }
-            }
-        },
-        onPasswordDismiss = {
-            showPasswordDialog = false
-            passwordInput = ""
-        },
-        showAppInfo = showAppInfo,
-        onAppInfoDismiss = { viewModel.hideAppInfo() },
-        showLocationChannelsSheet = showLocationChannelsSheet,
-        onLocationChannelsSheetDismiss = { showLocationChannelsSheet = false },
-        showUserSheet = showUserSheet,
-        onUserSheetDismiss = { 
-            showUserSheet = false
-            selectedMessageForSheet = null // Reset message when dismissing
-        },
-        selectedUserForSheet = selectedUserForSheet,
-        selectedMessageForSheet = selectedMessageForSheet,
-        viewModel = viewModel
     )
 }
 
@@ -290,51 +246,50 @@ private fun ChatInputSection(
     nickname: String,
     colorScheme: ColorScheme
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = colorScheme.background
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .imePadding(),
     ) {
-        Column {
-            HorizontalDivider(color = colorScheme.outline.copy(alpha = 0.3f))
-            // Command suggestions box
-            if (showCommandSuggestions && commandSuggestions.isNotEmpty()) {
-                CommandSuggestionsBox(
-                    suggestions = commandSuggestions,
-                    onSuggestionClick = onCommandSuggestionClick,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                HorizontalDivider(color = colorScheme.outline.copy(alpha = 0.2f))
-            }
-            
-            // Mention suggestions box
-            if (showMentionSuggestions && mentionSuggestions.isNotEmpty()) {
-                MentionSuggestionsBox(
-                    suggestions = mentionSuggestions,
-                    onSuggestionClick = onMentionSuggestionClick,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                HorizontalDivider(color = colorScheme.outline.copy(alpha = 0.2f))
-            }
-
-            MessageInput(
-                value = messageText,
-                onValueChange = onMessageTextChange,
-                onSend = onSend,
-                selectedPrivatePeer = selectedPrivatePeer,
-                currentChannel = currentChannel,
-                nickname = nickname,
+        HorizontalDivider(color = colorScheme.outline.copy(alpha = 0.3f))
+        // Command suggestions box
+        if (showCommandSuggestions && commandSuggestions.isNotEmpty()) {
+            CommandSuggestionsBox(
+                suggestions = commandSuggestions,
+                onSuggestionClick = onCommandSuggestionClick,
                 modifier = Modifier.fillMaxWidth()
             )
+
+            HorizontalDivider(color = colorScheme.outline.copy(alpha = 0.2f))
         }
+
+        // Mention suggestions box
+        if (showMentionSuggestions && mentionSuggestions.isNotEmpty()) {
+            MentionSuggestionsBox(
+                suggestions = mentionSuggestions,
+                onSuggestionClick = onMentionSuggestionClick,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            HorizontalDivider(color = colorScheme.outline.copy(alpha = 0.2f))
+        }
+
+        MessageInput(
+            value = messageText,
+            onValueChange = onMessageTextChange,
+            onSend = onSend,
+            selectedPrivatePeer = selectedPrivatePeer,
+            currentChannel = currentChannel,
+            nickname = nickname,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatFloatingHeader(
-    headerHeight: Dp,
     selectedPrivatePeer: String?,
     currentChannel: String?,
     nickname: String,
@@ -345,38 +300,29 @@ private fun ChatFloatingHeader(
     onPanicClear: () -> Unit,
     onLocationChannelsClick: () -> Unit
 ) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .zIndex(1f)
-            .windowInsetsPadding(WindowInsets.statusBars), // Extend into status bar area
-        color = colorScheme.background // Solid background color extending into status bar
-    ) {
-        TopAppBar(
-            title = {
-                ChatHeaderContent(
-                    selectedPrivatePeer = selectedPrivatePeer,
-                    currentChannel = currentChannel,
-                    nickname = nickname,
-                    viewModel = viewModel,
-                    onBackClick = {
-                        when {
-                            selectedPrivatePeer != null -> viewModel.endPrivateChat()
-                            currentChannel != null -> viewModel.switchToChannel(null)
-                        }
-                    },
-                    onSidebarClick = onSidebarToggle,
-                    onTripleClick = onPanicClear,
-                    onShowAppInfo = onShowAppInfo,
-                    onLocationChannelsClick = onLocationChannelsClick
-                )
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = Color.Transparent
-            ),
-            modifier = Modifier.height(headerHeight) // Ensure compact header height
+    TopAppBar(
+        title = {
+            ChatHeaderContent(
+                selectedPrivatePeer = selectedPrivatePeer,
+                currentChannel = currentChannel,
+                nickname = nickname,
+                viewModel = viewModel,
+                onBackClick = {
+                    when {
+                        selectedPrivatePeer != null -> viewModel.endPrivateChat()
+                        currentChannel != null -> viewModel.switchToChannel(null)
+                    }
+                },
+                onSidebarClick = onSidebarToggle,
+                onTripleClick = onPanicClear,
+                onShowAppInfo = onShowAppInfo,
+                onLocationChannelsClick = onLocationChannelsClick
+            )
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = colorScheme.background.copy(alpha = 0.95f)
         )
-    }
+    )
 }
 
 @Composable
@@ -387,15 +333,6 @@ private fun ChatDialogs(
     onPasswordChange: (String) -> Unit,
     onPasswordConfirm: () -> Unit,
     onPasswordDismiss: () -> Unit,
-    showAppInfo: Boolean,
-    onAppInfoDismiss: () -> Unit,
-    showLocationChannelsSheet: Boolean,
-    onLocationChannelsSheetDismiss: () -> Unit,
-    showUserSheet: Boolean,
-    onUserSheetDismiss: () -> Unit,
-    selectedUserForSheet: String,
-    selectedMessageForSheet: BitchatMessage?,
-    viewModel: ChatViewModel
 ) {
     // Password dialog
     PasswordPromptDialog(
@@ -407,9 +344,24 @@ private fun ChatDialogs(
         onDismiss = onPasswordDismiss
     )
 
-    // About sheet
-    AboutSheet(
-        isPresented = showAppInfo,
+}
+
+@Composable
+private fun ChatSheets(
+    showAppInfo: Boolean,
+    onAppInfoDismiss: () -> Unit,
+    showLocationChannelsSheet: Boolean,
+    onLocationChannelsSheetDismiss: () -> Unit,
+    showUserSheet: Boolean,
+    onUserSheetDismiss: () -> Unit,
+    selectedUserForSheet: String,
+    selectedMessageForSheet: BitchatMessage?,
+    viewModel: ChatViewModel
+) {
+
+    // App info sheet
+    AppInfoBottomSheet(
+        show = showAppInfo,
         onDismiss = onAppInfoDismiss
     )
     
@@ -421,7 +373,7 @@ private fun ChatDialogs(
             viewModel = viewModel
         )
     }
-    
+
     // User action sheet
     if (showUserSheet) {
         ChatUserSheet(
