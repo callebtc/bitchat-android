@@ -1,8 +1,8 @@
 package com.bitchat.android.ui
 
 import android.app.Application
-import android.content.Context
 import android.util.Log
+import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.viewModelScope
@@ -11,10 +11,11 @@ import com.bitchat.android.mesh.BluetoothMeshService
 import com.bitchat.android.model.BitchatMessage
 import com.bitchat.android.protocol.BitchatPacket
 import com.bitchat.android.nostr.NostrGeohashService
-
 import kotlinx.coroutines.launch
+import com.bitchat.android.util.NotificationIntervalManager
 import kotlinx.coroutines.delay
-import java.util.*
+import kotlinx.coroutines.launch
+import java.util.Date
 import kotlin.random.Random
 
 /**
@@ -47,7 +48,12 @@ class ChatViewModel(
     
     val privateChatManager = PrivateChatManager(state, messageManager, dataManager, noiseSessionDelegate)
     private val commandProcessor = CommandProcessor(state, messageManager, channelManager, privateChatManager)
-    private val notificationManager = NotificationManager(application.applicationContext)
+    private val notificationManager = NotificationManager(
+      application.applicationContext,
+      NotificationManagerCompat.from(application.applicationContext),
+      NotificationIntervalManager()
+    )
+    
     // Delegate handler for mesh callbacks
     private val meshDelegateHandler = MeshDelegateHandler(
         state = state,
@@ -72,7 +78,7 @@ class ChatViewModel(
         dataManager = dataManager,
         notificationManager = notificationManager
     )
-    
+
     // Expose state through LiveData (maintaining the same interface)
     val messages: LiveData<List<BitchatMessage>> = state.messages
     val connectedPeers: LiveData<List<String>> = state.connectedPeers
@@ -106,7 +112,7 @@ class ChatViewModel(
     val geohashPeople: LiveData<List<GeoPerson>> = state.geohashPeople
     val teleportedGeo: LiveData<Set<String>> = state.teleportedGeo
     val geohashParticipantCounts: LiveData<Map<String, Int>> = state.geohashParticipantCounts
-    
+
     init {
         // Note: Mesh service delegate is now set by MainActivity
         loadAndInitialize()
@@ -136,7 +142,7 @@ class ChatViewModel(
         state.setFavoritePeers(dataManager.favoritePeers.toSet())
         dataManager.loadBlockedUsers()
         dataManager.loadGeohashBlockedUsers()
-        
+
         // Log all favorites at startup
         dataManager.logAllFavorites()
         logCurrentFavoriteState()
@@ -146,10 +152,10 @@ class ChatViewModel(
         
         // Initialize location channel state
         nostrGeohashService.initializeLocationChannelState()
-        
+
         // Initialize favorites persistence service
         com.bitchat.android.favorites.FavoritesPersistenceService.initialize(getApplication())
-        
+
         // Initialize Nostr integration
         nostrGeohashService.initializeNostrIntegration()
 
@@ -158,7 +164,7 @@ class ChatViewModel(
             val nostrTransport = com.bitchat.android.nostr.NostrTransport.getInstance(getApplication())
             nostrTransport.senderPeerID = meshService.myPeerID
         } catch (_: Exception) { }
-        
+
         // Note: Mesh service is now started by MainActivity
         
         // Show welcome message if no peers after delay
@@ -299,16 +305,16 @@ class ChatViewModel(
                     mentions = if (mentions.isNotEmpty()) mentions else null,
                     channel = currentChannelValue
                 )
-                
+
                 if (currentChannelValue != null) {
                     channelManager.addChannelMessage(currentChannelValue, message, meshService.myPeerID)
-                    
+
                     // Check if encrypted channel
                     if (channelManager.hasChannelKey(currentChannelValue)) {
                         channelManager.sendEncryptedChannelMessage(
-                            content, 
-                            mentions, 
-                            currentChannelValue, 
+                            content,
+                            mentions,
+                            currentChannelValue,
                             state.getNicknameValue(),
                             meshService.myPeerID,
                             onEncryptedPayload = { encryptedData ->
@@ -329,9 +335,7 @@ class ChatViewModel(
             }
         }
     }
-    
 
-    
     // MARK: - Utility Functions
     
     fun getPeerIDForNickname(nickname: String): String? {
@@ -434,23 +438,7 @@ class ChatViewModel(
         val rssiValues = meshService.getPeerRSSI()
         state.setPeerRSSI(rssiValues)
     }
-    
 
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
     // MARK: - Debug and Troubleshooting
     
     fun getDebugStatus(): String {
@@ -474,7 +462,7 @@ class ChatViewModel(
         // Update notification manager with current geohash for notification logic
         notificationManager.setCurrentGeohash(geohash)
     }
-    
+
     fun clearNotificationsForSender(peerID: String) {
         // Clear notifications when user opens a chat
         notificationManager.clearNotificationsForSender(peerID)
@@ -484,14 +472,14 @@ class ChatViewModel(
         // Clear notifications when user opens a geohash chat
         notificationManager.clearNotificationsForGeohash(geohash)
     }
-    
+
     /**
      * Clear mesh mention notifications when user opens mesh chat
      */
     fun clearMeshMentionNotifications() {
         notificationManager.clearMeshMentionNotifications()
     }
-    
+
     // MARK: - Command Autocomplete (delegated)
     
     fun updateCommandSuggestions(input: String) {
@@ -570,7 +558,7 @@ class ChatViewModel(
         
         // Clear geohash message history
         nostrGeohashService.clearGeohashMessageHistory()
-        
+
         // Reset nickname
         val newNickname = "anon${Random.nextInt(1000, 9999)}"
         state.setNickname(newNickname)
@@ -618,55 +606,35 @@ class ChatViewModel(
             Log.e(TAG, "❌ Error clearing cryptographic data: ${e.message}")
         }
     }
-    
 
-    
-
-    
-
-    
-
-    
     /**
      * Get participant count for a specific geohash (5-minute activity window)
      */
     fun geohashParticipantCount(geohash: String): Int {
         return nostrGeohashService.geohashParticipantCount(geohash)
     }
-    
+
     /**
      * Begin sampling multiple geohashes for participant activity
      */
     fun beginGeohashSampling(geohashes: List<String>) {
         nostrGeohashService.beginGeohashSampling(geohashes)
     }
-    
+
     /**
      * End geohash sampling
      */
     fun endGeohashSampling() {
         nostrGeohashService.endGeohashSampling()
     }
-    
 
-    
-
-    
-
-    
-
-    
-
-    
-
-    
     /**
      * Check if a geohash person is teleported (iOS-compatible)
      */
     fun isPersonTeleported(pubkeyHex: String): Boolean {
         return nostrGeohashService.isPersonTeleported(pubkeyHex)
     }
-    
+
     /**
      * Start geohash DM with pubkey hex (iOS-compatible)
      */
@@ -675,30 +643,18 @@ class ChatViewModel(
             startPrivateChat(convKey)
         }
     }
-    
 
-    
-
-    
     fun selectLocationChannel(channel: com.bitchat.android.geohash.ChannelID) {
         nostrGeohashService.selectLocationChannel(channel)
     }
-    
+
     /**
      * Block a user in geohash channels by their nickname
      */
     fun blockUserInGeohash(targetNickname: String) {
         nostrGeohashService.blockUserInGeohash(targetNickname)
     }
-    
 
-    
-
-    
-
-    
-
-    
     // MARK: - Navigation Management
     
     fun showAppInfo() {
@@ -753,9 +709,9 @@ class ChatViewModel(
             else -> false
         }
     }
-    
+
     // MARK: - iOS-Compatible Color System
-    
+
     /**
      * Get consistent color for a mesh peer by ID (iOS-compatible)
      */
@@ -764,13 +720,11 @@ class ChatViewModel(
         val seed = "noise:${peerID.lowercase()}"
         return colorForPeerSeed(seed, isDark).copy()
     }
-    
+
     /**
      * Get consistent color for a Nostr pubkey (iOS-compatible)
      */
     fun colorForNostrPubkey(pubkeyHex: String, isDark: Boolean): androidx.compose.ui.graphics.Color {
         return nostrGeohashService.colorForNostrPubkey(pubkeyHex, isDark)
     }
-    
-
 }
